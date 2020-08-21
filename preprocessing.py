@@ -540,22 +540,27 @@ class Model(object):
         self.corpora = Corpora(data_store)
         self.disambiguator = FileDisambiguator(self.corpora)
 
+    def train_word2vec(self):
+        sentences = Sentences(
+            [self.corpora.sense_annotated_corpora, self.corpora.data_store.related_lemmas_filename])
+        t0 = time.time()
+        model = gensim.models.Word2Vec(sentences, size=100, workers=8, min_count=3)
+        model.save(self.model_path)
+        model_training_duration = time.time() - t0
+        print('Model training duration: {}'.format(time.strftime("%H:%M:%S", time.gmtime(model_training_duration))))
+        word2index = {token: token_index for token_index, token in enumerate(model.wv.index2word)}
+        self.corpora.calculate_new_embeddings(model.wv.vectors, word2index)
+        self.corpora.data_store.save_base_forms_embeddings(self.embeddings_path)
+        print('------------------------------------------------------------------\n')
+        return model, word2index
+
     def train(self, synsets_matrix_filename='synsets_matrix_poleval.npz',
               iterations=10):
         synsets_matrix = np.load(synsets_matrix_filename)['arr_0']
         self.disambiguator.disambiguate_tokenized_file(synsets_matrix)
         del self.corpora.idf
         self.corpora.base_forms_idf = self.corpora.calculate_idf(self.corpora.lemmatized_corpora)
-        sentences = Sentences([self.corpora.sense_annotated_corpora, self.corpora.data_store.related_lemmas_filename])
-        t0 = time.time()
-        model = gensim.models.Word2Vec(sentences, size=100, workers=8, min_count=3)
-        model.save(self.model_path)
-        model_training_duration = time.time() - t0
-        print('Model training duration: {}'.format(time.strftime("%H:%M:%S", time.gmtime(model_training_duration))))
-        print('------------------------------------------------------------------\n')
-        word2index = {token: token_index for token_index, token in enumerate(model.wv.index2word)}
-        self.corpora.calculate_new_embeddings(model.wv.vectors, word2index)
-        self.corpora.data_store.save_base_forms_embeddings(self.embeddings_path)
+        model, word2index = self.train_word2vec()
 
         for i in range(1, iterations):
             print('Iteration {}:'.format(i))
@@ -563,19 +568,9 @@ class Model(object):
                 self.corpora.sense_annotated_corpora_base_name, i)
             self.disambiguator.disambiguate_lemmatized_file_after_word2vec(model.wv.vectors, word2index)
             self.disambiguator.improve_sense_annotations(model.wv.vectors, word2index)
-            sentences = Sentences(
-                [self.corpora.sense_annotated_corpora, self.corpora.data_store.related_lemmas_filename])
             self.model_path = '{}_iter{}.model'.format(self.model_base_path, i)
-            t0 = time.time()
-            model = gensim.models.Word2Vec(sentences, size=100, workers=8, min_count=3)
-            model.save(self.model_path)
-            model_training_duration = time.time() - t0
-            print('Model training duration: {}'.format(time.strftime("%H:%M:%S", time.gmtime(model_training_duration))))
             self.embeddings_path = '{}_iter{}.txt'.format(self.embeddings_base_path, i)
-            word2index = {token: token_index for token_index, token in enumerate(model.wv.index2word)}
-            self.corpora.calculate_new_embeddings(model.wv.vectors, word2index)
-            self.corpora.data_store.save_base_forms_embeddings(self.embeddings_path)
-            print('------------------------------------------------------------------\n')
+            model, word2index = self.train_word2vec()
 
 
 if __name__ == "__main__":
