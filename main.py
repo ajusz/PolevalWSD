@@ -40,11 +40,11 @@ class DataStore(object):
 
     def read_base_forms_idf(self, filename):
         print('Reading base forms idf')
-        self.base_forms = defaultdict(int)
+        self.base_forms_idf = defaultdict(int)
         with open(filename) as file:
             for line in tqdm(file):
                 base_form, idf = line.strip().split()
-                self.base_forms_idf[base_form] = idf
+                self.base_forms_idf[base_form] = float(idf)
 
     def read_embeddings(self):
         print('Reading embeddings')
@@ -144,10 +144,10 @@ class Disambiguator(object):
         id_sense_mapping = self.disambiguate(text, k)
         with open(join(input_directory, filename)) as input_file:
             with open(join(results_directory, filename), 'w') as output_file:
-                output_file.write('{}\tSENSE'.format(next(input_file)))
+                output_file.write('{}\tSENSE\n'.format(next(input_file).strip()))
                 for line in input_file:
-                    id = line.strip().split('\t')[0]
-                    output_file.write(line)
+                    id = int(line.strip().split('\t')[0])
+                    output_file.write(line.strip())
                     if id in id_sense_mapping:
                         output_file.write('\t{}'.format(id_sense_mapping[id]))
                     output_file.write('\n')
@@ -163,15 +163,15 @@ def read_lemmas(lemmas_filename):
 
 if __name__ == '__main__':
     input_kpwr_directory = 'data/testdata/kpwr'
-    output_kpwr_directory = 'data/testdata/kpwr_with_labels'
+    output_kpwr_directory = 'data/testdata_with_labels/kpwr_with_labels'
     kpwr_filenames = [f for f in listdir(input_kpwr_directory) if isfile(join(input_kpwr_directory, f))]
 
     input_sherlock_directory = 'data/testdata/sherlock'
-    output_sherlock_directory = 'data/testdata/sherlock_with_labels'
+    output_sherlock_directory = 'data/testdata_with_labels/sherlock_with_labels'
     sherlock_filenames = [f for f in listdir(input_sherlock_directory) if isfile(join(input_sherlock_directory, f))]
 
-    data_store = DataStore(model_path='models/poleval_lemmas_word2vec_iter7.model',
-                           embeddings_path='data/embeddings/lemma_embeddings_iter7.txt')
+    data_store = DataStore(model_path='models/poleval_lemmas_word2vec_iter8.model',
+                           embeddings_path='data/embeddings/lemma_embeddings_iter8.txt')
     disambiguator = Disambiguator(data_store)
     for filename in kpwr_filenames:
         disambiguator.disambiguate_conll_file(filename, input_kpwr_directory, output_kpwr_directory)

@@ -6,7 +6,6 @@ import numpy as np
 import nltk
 from tqdm import tqdm
 import time
-from datetime import datetime
 from collections import defaultdict
 from functools import partial
 
@@ -45,7 +44,7 @@ class DataStore(object):
         self.synset_lemmas_mapping = None
         self.synsets = None
         self.related_synsets = None
-        self.related_lemmas_filename='data/wordnet_data/related_lemmas.txt'
+        self.related_lemmas_filename = 'data/wordnet_data/related_lemmas.txt'
         self.load(read_definitions, read_relations)
 
     def load(self, read_definitions=True, read_relations=True):
@@ -53,8 +52,8 @@ class DataStore(object):
         if read_definitions:
             self.read_definitions('data/wordnet_data/synset_defs_examples.txt')
         self.read_synsets('data/wordnet_data/synsets.txt')
-        self.embeddings = self.read_embeddings('data/embeddings/nkjp+wiki-forms-all-100-cbow-hs.txt')
-        self.base_forms_embeddings = self.read_embeddings('data/embeddings/nkjp+wiki-lemmas-all-100-cbow-hs.txt')
+        # self.embeddings = self.read_embeddings('data/embeddings/nkjp+wiki-forms-all-100-cbow-hs.txt')
+        # self.base_forms_embeddings = self.read_embeddings('data/embeddings/nkjp+wiki-lemmas-all-100-cbow-hs.txt')
         self.create_lemma_synset_mappings('data/wordnet_data/lemmas.txt', 'data/wordnet_data/lexicalunits.txt')
         if read_relations:
             self.read_relations('data/wordnet_data/synset_rels.txt')
@@ -87,7 +86,7 @@ class DataStore(object):
             embeddings_count = len(self.base_forms_embeddings)
             file.write('{} {}\n'.format(embeddings_count, embedding_length))
             for base_form, embedding in tqdm(self.base_forms_embeddings.items()):
-                file.write('{} {}\n'.format(base_form, str(embedding)[1:-1]))
+                file.write('{} {}\n'.format(base_form, str(embedding)[1:-1].replace('\n', '')))
 
     def read_synsets(self, synsets_filename):
         print('Reading synsets')
@@ -112,13 +111,14 @@ class DataStore(object):
                 important_relations = ['hiperonimia', 'hiponimia', 'część', 'element kolekcji', 'fuzzynimia_synsetów',
                                        'bliskoznaczność', 'meronimia czasownikowa', 'meronimia podsytuacji',
                                        'meronimia sytuacji towarzyszącej', 'holonimia sytuacji towarzyszącej'
-                                       'holonimia czasownikowa', 'holonimia podsytuacji', 'wartość_cechy']
+                                                                           'holonimia czasownikowa',
+                                       'holonimia podsytuacji', 'wartość_cechy']
                 if relation in important_relations:
-                    synset1 = self.synsets[int(s1)-1]
-                    synset2 = self.synsets[int(s2)-1]
+                    synset1 = self.synsets[int(s1) - 1]
+                    synset2 = self.synsets[int(s2) - 1]
                     self.related_synsets[synset1].add(synset2)
                     self.related_synsets[synset2].add(synset1)
-                    
+
     def write_related_lemmas(self):
         with open(self.related_lemmas_filename, 'w') as output_file:
             for synset, rs in self.related_synsets.items():
@@ -135,10 +135,10 @@ class DataStore(object):
             lexicalunits = [line.strip().split() for line in lexicalunits_file]
         self.lemma_synsets_mapping = defaultdict(list)
         for lemma_id, synset_id in tqdm(lexicalunits):
-            self.lemma_synsets_mapping[lemmas[int(lemma_id)-1]].append(int(synset_id)-1)
+            self.lemma_synsets_mapping[lemmas[int(lemma_id) - 1]].append(int(synset_id) - 1)
         self.synset_lemmas_mapping = defaultdict(list)
         for lemma_id, synset_id in tqdm(lexicalunits):
-            self.synset_lemmas_mapping[self.synsets[int(synset_id)-1]].append(lemmas[int(lemma_id)-1])
+            self.synset_lemmas_mapping[self.synsets[int(synset_id) - 1]].append(lemmas[int(lemma_id) - 1])
 
 
 class SynsetsMatrixCreator(object):
@@ -165,7 +165,7 @@ class SynsetsMatrixCreator(object):
             for lemma in self.data_store.synset_lemmas_mapping[synset]:
                 for word in lemma.split():
                     self.increase_df(word, terms, df)
-        self.idf = {word: np.log(N/df_t) for word, df_t in df.items()}
+        self.idf = {word: np.log(N / df_t) for word, df_t in df.items()}
 
     def calculate_base_forms_idf(self):
         df = defaultdict(int)
@@ -179,7 +179,7 @@ class SynsetsMatrixCreator(object):
                 for word in lemma.split():
                     for base_form in self.data_store.base_forms.get(word, [word]):
                         self.increase_df(base_form, terms, df)
-        self.base_forms_idf = {word: np.log(N/df_t) for word, df_t in df.items()}
+        self.base_forms_idf = {word: np.log(N / df_t) for word, df_t in df.items()}
 
     def add_word_embedding(self, matrix, i, word, multiplier=1.0):
         if word in self.data_store.embeddings:
@@ -221,21 +221,21 @@ class SentenceDisambiguator(object):
     def calculate_embedding(self, i, important_words, idf, base_forms_idf, k=6, alpha=0.95):
         start = max(i - k, 0)
         end = i + k
-        context = important_words[start:i] + important_words[i+1:end]
+        context = important_words[start:i] + important_words[i + 1:end]
         embedding = np.zeros(next(iter(self.data_store.base_forms_embeddings.values())).shape)
         j = start
         for word in context:
             if j == i:
                 j += 1
             if word in self.data_store.embeddings:
-                embedding += self.data_store.embeddings[word] * idf[word] * (alpha**abs(i-j))
+                embedding += self.data_store.embeddings[word] * idf[word] * (alpha ** abs(i - j))
             else:
                 added_base_forms_embeddings_count = 0
                 embedding_to_be_added = np.zeros(next(iter(self.data_store.base_forms_embeddings.values())).shape)
                 for base_form in self.data_store.base_forms.get(word, [word]):
                     if base_form in self.data_store.base_forms_embeddings:
                         embedding_to_be_added += self.data_store.base_forms_embeddings[base_form] \
-                                                 * base_forms_idf[base_form] * (alpha**abs(i-j))
+                                                 * base_forms_idf[base_form] * (alpha ** abs(i - j))
                         added_base_forms_embeddings_count += 1
                 if added_base_forms_embeddings_count > 0:
                     embedding += embedding_to_be_added / added_base_forms_embeddings_count
@@ -245,7 +245,7 @@ class SentenceDisambiguator(object):
     def calculate_lemma_embedding(self, i, lemmatized_text, base_forms_idf, k=6, alpha=0.95):
         start = max(i - k, 0)
         end = i + k
-        context = lemmatized_text[start:i] + lemmatized_text[i+1:end]
+        context = lemmatized_text[start:i] + lemmatized_text[i + 1:end]
         embedding = np.zeros(next(iter(self.data_store.base_forms_embeddings.values())).shape)
         j = start
         for word in context:
@@ -253,7 +253,7 @@ class SentenceDisambiguator(object):
                 j += 1
             if word in self.data_store.base_forms_embeddings:
                 embedding += self.data_store.base_forms_embeddings[word] \
-                             * base_forms_idf[word] * (alpha**abs(i-j))
+                             * base_forms_idf[word] * (alpha ** abs(i - j))
             j += 1
         return embedding
 
@@ -261,7 +261,7 @@ class SentenceDisambiguator(object):
                                      base_forms_idf, k=6, alpha=0.95):
         start = max(i - k, 0)
         end = i + k
-        context = disambiguated_text[start:i] + disambiguated_text[i+1:end]
+        context = disambiguated_text[start:i] + disambiguated_text[i + 1:end]
         embedding = np.zeros(word2vec_matrix[1].shape)
         j = start
         for word in context:
@@ -269,7 +269,8 @@ class SentenceDisambiguator(object):
                 j += 1
             splitted_word = word.split('/')
             if word in word2index:
-                embedding += word2vec_matrix[word2index[word]] * base_forms_idf[splitted_word[0]] * (alpha**abs(i-j))
+                embedding += word2vec_matrix[word2index[word]] * base_forms_idf[splitted_word[0]] * (
+                            alpha ** abs(i - j))
             j += 1
         return embedding
 
@@ -374,26 +375,6 @@ class SentenceDisambiguator(object):
         similarity_vector = matrix.dot(embedding.T) / embedding_norm
         return similarity_vector.flatten()
 
-    # def disambiguate_tokenized_after_word2vec(tokenized_text, lemma_synsets_mapping, synsets, base_forms,
-    #                                           word2vec_matrix, word2index, base_forms_embeddings,
-    #                                           base_forms_idf, k=5):
-    #     for i, word in enumerate(tokenized_text):
-    #         senses = []
-    #         for base_form in base_forms.get(word, [word]):
-    #             for synset_id in lemma_synsets_mapping[base_form]:
-    #                 senses.append('{}/{}'.format(base_form, synsets[synset_id]))
-    #         if len(senses) > 1:
-    #             embedding = calculate_embedding(i, tokenized_text, {}, base_forms_embeddings,
-    #                                             {}, base_forms_idf, base_forms, k)
-    #             sense_ids = [word2index[sense] for sense in senses]
-    #             best_sense_id = find_best_sense(word2vec_matrix, sense_ids, embedding)
-    #             best_sense = senses[best_sense_id]
-    #             tokenized_text[i] = best_sense
-    #         else:
-    #             base_form = random.choice(list(base_forms.get(word, [word])))
-    #             tokenized_text[i] = base_form
-    #     return ' '.join(tokenized_text)
-
 
 class FileDisambiguator(object):
     def __init__(self, corpora):
@@ -445,16 +426,6 @@ class FileDisambiguator(object):
             print('Improved {} sense annotations. Iteration: {}'.format(improved_count, i))
             i += 1
 
-    #
-    # def disambiguate_file_after_word2vec(self, tokenized_file, output_filename, word2vec_matrix,
-    #                                      word2index, base_forms_idf):
-    #     with open(output_filename, 'w') as output_file:
-    #         for line in open(tokenized_file):
-    #             tokenized_line = line.split()
-    #             disambiguated_line = self.sentence_disambiguator.disambiguate_tokenized_after_word2vec(
-    #                 tokenized_line, word2vec_matrix, word2index, base_forms_idf)
-    #             output_file.write('{}\n'.format(disambiguated_line))
-
 
 class Corpora(object):
     def __init__(self, data_store, calculate_idf=True, calculate_base_forms_idf=True):
@@ -462,7 +433,6 @@ class Corpora(object):
         self.corpora = 'data/training/data/train_shuf.txt'
         self.tokenized_corpora = 'data/training/data/train_shuf_tokenized.txt'
         self.lemmatized_corpora = 'data/training/data/train_shuf_lemmatized.txt'
-        # self.lemmatized_corpora = 'data/training/clarin/train_shuf_lem_and_tok.txt'
         self.sense_annotated_corpora_base_name = 'data/training/results/train_shuf_lemmatized_sense_annotated'
         self.sense_annotated_corpora = '{}_iter0.txt'.format(self.sense_annotated_corpora_base_name)
         self.idf = self.calculate_idf(self.tokenized_corpora) if calculate_idf else None
@@ -485,7 +455,7 @@ class Corpora(object):
                 for word in line.split():
                     self.increase_df(word, terms, df)
                 N += 1
-        return {word: np.log(N/df_t) for word, df_t in df.items()}
+        return {word: np.log(N / df_t) for word, df_t in df.items()}
 
     def calculate_base_forms_idf(self, filename):
         df = defaultdict(int)
@@ -498,7 +468,7 @@ class Corpora(object):
                     for base_form in self.data_store.base_forms.get(word, [word]):
                         self.increase_df(base_form, terms, df)
                 N += 1
-        return {word: np.log(N/df_t) for word, df_t in df.items()}
+        return {word: np.log(N / df_t) for word, df_t in df.items()}
 
     def save_base_forms_idf(self, filename):
         with open(filename, 'w', encoding='utf-8') as file:
@@ -567,50 +537,27 @@ class Model(object):
         self.embeddings_path = '{}_iter0.txt'.format(self.embeddings_base_path)
         self.model_base_path = 'models/poleval_lemmas_word2vec'
         self.model_path = '{}_iter0.model'.format(self.model_base_path)
-        self.corpora = Corpora(data_store, calculate_idf=False, calculate_base_forms_idf=False)
+        self.corpora = Corpora(data_store)
         self.disambiguator = FileDisambiguator(self.corpora)
 
     def train(self, synsets_matrix_filename='synsets_matrix_poleval.npz',
               iterations=10):
-        # synsets_matrix = np.load(synsets_matrix_filename)['arr_0']
+        synsets_matrix = np.load(synsets_matrix_filename)['arr_0']
+        self.disambiguator.disambiguate_tokenized_file(synsets_matrix)
+        del self.corpora.idf
         self.corpora.base_forms_idf = self.corpora.calculate_idf(self.corpora.lemmatized_corpora)
-        # self.disambiguator.disambiguate_lemmatized_file(synsets_matrix)
-        # # self.disambiguator.disambiguate_tokenized_file(synsets_matrix)
-        # # del self.corpora.idf
-        # # self.corpora.base_forms_idf = self.corpora.calculate_idf(self.corpora.lemmatized_corpora)
-        # sentences = Sentences([self.corpora.sense_annotated_corpora, self.corpora.data_store.related_lemmas_filename])
-        # t0 = time.time()
-        # model = gensim.models.Word2Vec(sentences, size=100, workers=8, min_count=3)
-        # model.save(self.model_path)
-        # model_training_duration = time.time() - t0
-        # print('Model training duration: {}'.format(time.strftime("%H:%M:%S", time.gmtime(model_training_duration))))
-        # print('------------------------------------------------------------------\n')
-        # word2index = {token: token_index for token_index, token in enumerate(model.wv.index2word)}
-        # self.corpora.calculate_new_embeddings(model.wv.vectors, word2index)
-        # self.corpora.data_store.save_base_forms_embeddings(self.embeddings_path)
-
-        # TEMPORARY
-        self.model_path = 'models/poleval_lemmas_word2vec_iter7.model'
-        model = gensim.models.Word2Vec.load(self.model_path)
-        self.embeddings_path = '{}_iter7.txt'.format(self.embeddings_base_path)
+        sentences = Sentences([self.corpora.sense_annotated_corpora, self.corpora.data_store.related_lemmas_filename])
+        t0 = time.time()
+        model = gensim.models.Word2Vec(sentences, size=100, workers=8, min_count=3)
+        model.save(self.model_path)
+        model_training_duration = time.time() - t0
+        print('Model training duration: {}'.format(time.strftime("%H:%M:%S", time.gmtime(model_training_duration))))
+        print('------------------------------------------------------------------\n')
         word2index = {token: token_index for token_index, token in enumerate(model.wv.index2word)}
         self.corpora.calculate_new_embeddings(model.wv.vectors, word2index)
         self.corpora.data_store.save_base_forms_embeddings(self.embeddings_path)
 
-        # TEMPORARY
-        # self.corpora.sense_annotated_corpora = '{}_iter6.txt'.format(
-        #     self.corpora.sense_annotated_corpora_base_name)
-        # sentences = Sentences(
-        #     [self.corpora.sense_annotated_corpora, self.corpora.data_store.related_lemmas_filename])
-        # self.model_name = '{}_iter6.model'.format(self.model_base_name)
-        # t0 = time.time()
-        # model = gensim.models.Word2Vec(sentences, size=100, workers=8)
-        # model.save(self.model_name)
-        # model_training_duration = time.time() - t0
-        # print('Model training duration: {}'.format(time.strftime("%H:%M:%S", time.gmtime(model_training_duration))))
-        # print('------------------------------------------------------------------\n')
-
-        for i in range(8, iterations):
+        for i in range(1, iterations):
             print('Iteration {}:'.format(i))
             self.corpora.sense_annotated_corpora = '{}_iter{}.txt'.format(
                 self.corpora.sense_annotated_corpora_base_name, i)
@@ -633,17 +580,5 @@ class Model(object):
 
 if __name__ == "__main__":
     data_store = DataStore(read_definitions=False, read_relations=False)
-
-    # SynsetsMatrixCreator(data_store).calculate_synsets_matrix()
-    # data_store.write_related_lemmas()
-
-    # tokenizer = Tokenizer()
-    # tokenizer.tokenize_file('data/training/clarin/train_shuf_lemmatized.txt', 'data/training/clarin/train_shuf_lem_and_tok.txt')
-
     model = Model(data_store)
     model.train()
-
-
-    # corpora = Corpora(None, calculate_idf=False, calculate_base_forms_idf=False)
-    # corpora.base_forms_idf = corpora.calculate_idf(corpora.lemmatized_corpora)
-    # corpora.save_base_forms_idf('data/base_forms_idf.txt')
