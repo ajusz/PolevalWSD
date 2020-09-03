@@ -14,7 +14,6 @@ class DataStore(object):
         self.word2vec_matrix = self.model.wv.vectors
         self.word2index = {token: token_index for token_index, token in enumerate(self.model.wv.index2word)}
         self.embeddings_path = embeddings_path
-        self.base_forms = None
         self.base_forms_idf = None
         self.base_forms_embeddings = None
         self.lemma_synsets_mapping = None
@@ -22,21 +21,10 @@ class DataStore(object):
         self.load()
 
     def load(self):
-        self.read_base_forms('data/polimorfologik/polimorfologik-2.1.txt')
         self.read_synsets('data/wordnet_data/synsets.txt')
         self.read_base_forms_idf('data/base_forms_idf.txt')
         self.base_forms_embeddings = self.read_embeddings()
         self.create_lemma_synsets_mapping('data/wordnet_data/lemmas.txt', 'data/wordnet_data/lexicalunits.txt')
-
-    def read_base_forms(self, filename):
-        print('Reading base forms')
-        self.base_forms = defaultdict(list)
-        with open(filename) as file:
-            for line in tqdm(file):
-                columns = line.split(';')
-                base_form = columns[0].lower()
-                word = columns[1].lower()
-                self.base_forms[word].append(base_form)
 
     def read_base_forms_idf(self, filename):
         print('Reading base forms idf')
@@ -96,18 +84,12 @@ class Disambiguator(object):
         context = important_words[start:i] + important_words[i+1:end]
         embedding = np.zeros(next(iter(self.data_store.base_forms_embeddings.values())).shape)
         j = start
-        for word in context:
+        for base_form in context:
             if j == i:
                 j += 1
-            added_base_forms_embeddings_count = 0
-            embedding_to_be_added = np.zeros(next(iter(self.data_store.base_forms_embeddings.values())).shape)
-            for base_form in self.data_store.base_forms.get(word, [word]):
-                if base_form in self.data_store.base_forms_embeddings:
-                    embedding_to_be_added += self.data_store.base_forms_embeddings[base_form] \
-                                             * self.data_store.base_forms_idf[base_form] * (alpha**abs(i-j))
-                    added_base_forms_embeddings_count += 1
-            if added_base_forms_embeddings_count > 0:
-                embedding += embedding_to_be_added / added_base_forms_embeddings_count
+            if base_form in self.data_store.base_forms_embeddings:
+                embedding += self.data_store.base_forms_embeddings[base_form] \
+                             * self.data_store.base_forms_idf[base_form] * (alpha**abs(i-j))
             j += 1
         return embedding
 
@@ -119,19 +101,18 @@ class Disambiguator(object):
     def disambiguate(self, text, k=6):
         important_words, important_word_indices = self.find_important_words(text)
         id_sense_mapping = {}
-        for i, word in zip(important_word_indices, important_words):
+        for i, lemma in zip(important_word_indices, important_words):
             senses = []
-            for lemma in self.data_store.base_forms.get(word, [word]):
-                for synset_id in self.data_store.lemma_synsets_mapping[lemma]:
-                    sense = '{}/{}'.format(lemma, self.data_store.synsets[synset_id])
-                    if sense in self.data_store.word2index:
-                        senses.append(sense)
+            for synset_id in self.data_store.lemma_synsets_mapping[lemma]:
+                sense = '{}/{}'.format(lemma, self.data_store.synsets[synset_id])
+                if sense in self.data_store.word2index:
+                    senses.append(sense)
             if len(senses) > 1:
                 embedding = self.calculate_embedding(i, important_words, k)
                 sense_indices = [self.data_store.word2index[sense] for sense in senses]
                 best_sense_id = self.find_best_sense(self.data_store.word2vec_matrix, sense_indices, embedding)
                 best_sense = senses[best_sense_id]
-                id_sense_mapping[i] = best_sense.rsplit('/', 1)[1][1:]
+                id_sense_mapping[i] = best_sense.rsplit('/', 1)[1]
         return id_sense_mapping
 
     def disambiguate_conll_file(self, filename, input_directory, results_directory, k=6):
@@ -139,17 +120,19 @@ class Disambiguator(object):
         with open(join(input_directory, filename)) as input_file:
             next(input_file)
             for line in input_file:
-                word = line.strip().split('\t')[2]
-                text.append(word.lower())
+                lemma = line.strip().split('\t')[3]
+                text.append(lemma.lower())
         id_sense_mapping = self.disambiguate(text, k)
         with open(join(input_directory, filename)) as input_file:
             with open(join(results_directory, filename), 'w') as output_file:
-                output_file.write('{}\tSENSE\n'.format(next(input_file).strip()))
+                output_file.write('{}\tWN_ID\n'.format(next(input_file).strip()))
                 for line in input_file:
                     id = int(line.strip().split('\t')[0])
                     output_file.write(line.strip())
                     if id in id_sense_mapping:
                         output_file.write('\t{}'.format(id_sense_mapping[id]))
+                    else:
+                        output_file.write('\t_')
                     output_file.write('\n')
 
 
@@ -163,11 +146,11 @@ def read_lemmas(lemmas_filename):
 
 if __name__ == '__main__':
     input_kpwr_directory = 'data/testdata/kpwr'
-    output_kpwr_directory = 'data/testdata_with_labels/kpwr_with_labels'
+    output_kpwr_directory = 'data/testdata_with_labels/testdata/kpwr'
     kpwr_filenames = [f for f in listdir(input_kpwr_directory) if isfile(join(input_kpwr_directory, f))]
 
     input_sherlock_directory = 'data/testdata/sherlock'
-    output_sherlock_directory = 'data/testdata_with_labels/sherlock_with_labels'
+    output_sherlock_directory = 'data/testdata_with_labels/testdata/sherlock'
     sherlock_filenames = [f for f in listdir(input_sherlock_directory) if isfile(join(input_sherlock_directory, f))]
 
     data_store = DataStore(model_path='models/poleval_lemmas_word2vec_iter8.model',
